@@ -1,7 +1,6 @@
 flask
-ultralytics
+ultralytics==8.0.196
 opencv-python
-numpy
+numpy<2.0
 Pillow
 easyocr
-sqlite3-binary
