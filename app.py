@@ -17,8 +17,9 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # ---------- Charger YOLO et EasyOCR ----------
 try:
     # ✅ Patch pour PyTorch (évite erreur avec torch >=2.6)
+    import ultralytics.nn.tasks as tasks
     if hasattr(torch, "serialization"):
-        torch.serialization.add_safe_globals([YOLO])
+        torch.serialization.add_safe_globals([YOLO, tasks.DetectionModel ])
     model = YOLO("best.pt")  # Assure-toi que ce fichier est bien dans ton repo GitHub
 except Exception as e:
     print("❌ Erreur chargement modèle :", e)
@@ -136,3 +137,4 @@ if __name__ == "__main__":
     init_db()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
