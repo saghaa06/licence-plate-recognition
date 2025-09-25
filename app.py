@@ -16,16 +16,17 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # ---------- Charger YOLO et EasyOCR ----------
 try:
-    # ✅ Patch pour PyTorch 2.6 (ajoute la classe YOLO aux globals sûrs)
-    torch.serialization.add_safe_globals([YOLO])
-    model = YOLO("best.pt")  # ton modèle
+    # ✅ Patch pour PyTorch (évite erreur avec torch >=2.6)
+    if hasattr(torch, "serialization"):
+        torch.serialization.add_safe_globals([YOLO])
+    model = YOLO("best.pt")  # Assure-toi que ce fichier est bien dans ton repo GitHub
 except Exception as e:
     print("❌ Erreur chargement modèle :", e)
     model = None
 
-reader = easyocr.Reader(['en'])  # tu peux ajouter 'fr' si besoin
+reader = easyocr.Reader(['en'], gpu=False)  # ⚠️ gpu=False pour éviter crash sur Render
 
-# ---------- DB ----------
+# ---------- Base de données ----------
 DB_NAME = "history.db"
 
 def init_db():
@@ -50,7 +51,7 @@ def save_history(plate, confidence, action):
     conn.commit()
     conn.close()
 
-# ---------- Detection ----------
+# ---------- Détection ----------
 def detect_license_plate(image):
     if model is None:
         return [], np.array(image)
@@ -73,7 +74,7 @@ def detect_license_plate(image):
             if plate_crop.size > 0:  # éviter crash si crop vide
                 ocr_result = reader.readtext(plate_crop)
                 if len(ocr_result) > 0:
-                    plate_text = ocr_result[0][1]  # texte détecté
+                    plate_text = ocr_result[0][1]
 
             detections.append({
                 'bbox': [x1, y1, x2, y2],
