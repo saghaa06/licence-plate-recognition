@@ -8,13 +8,21 @@ import cv2, base64
 import numpy as np
 from datetime import datetime
 import easyocr
+import torch
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# Charger YOLO et EasyOCR
-model = YOLO("best.pt")
+# ---------- Charger YOLO et EasyOCR ----------
+try:
+    # ✅ Patch pour PyTorch 2.6 (ajoute la classe YOLO aux globals sûrs)
+    torch.serialization.add_safe_globals([YOLO])
+    model = YOLO("best.pt")  # ton modèle
+except Exception as e:
+    print("❌ Erreur chargement modèle :", e)
+    model = None
+
 reader = easyocr.Reader(['en'])  # tu peux ajouter 'fr' si besoin
 
 # ---------- DB ----------
@@ -44,6 +52,9 @@ def save_history(plate, confidence, action):
 
 # ---------- Detection ----------
 def detect_license_plate(image):
+    if model is None:
+        return [], np.array(image)
+
     img_np = np.array(image)
     results = model(img_np)[0]
     detections = []
@@ -74,6 +85,7 @@ def detect_license_plate(image):
     annotated_img = results.plot()
     return detections, annotated_img
 
+# ---------- Routes ----------
 @app.route('/')
 def dashboard():
     return render_template("index.html")
@@ -118,9 +130,8 @@ def history():
     conn.close()
     return jsonify(rows)
 
+# ---------- Lancement ----------
 if __name__ == "__main__":
     init_db()
-    app.run(host="0.0.0.0", port=os.environ.get("PORT", 5000))
-
-
-
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
