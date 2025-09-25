@@ -10,72 +10,101 @@ from datetime import datetime
 import easyocr
 import torch
 
+# -------------------- CONFIG FLASK --------------------
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# ---------- Charger YOLO et EasyOCR ----------
+# -------------------- CHARGEMENT YOLO --------------------
+model = None
 try:
-    # ✅ Patch pour PyTorch (évite erreur avec torch >=2.6)
     import ultralytics.nn.tasks as tasks
+    import torch.nn.modules.container as container
+
+    # ✅ Autoriser les classes YOLO + DetectionModel + Sequential pour PyTorch >= 2.6
     if hasattr(torch, "serialization"):
-        torch.serialization.add_safe_globals([YOLO, tasks.DetectionModel ])
-    model = YOLO("best.pt")  # Assure-toi que ce fichier est bien dans ton repo GitHub
+        torch.serialization.add_safe_globals([
+            YOLO,
+            tasks.DetectionModel,
+            container.Sequential
+        ])
+
+    # ✅ Charger modèle YOLO
+    if os.path.exists("best.pt"):
+        model = YOLO("best.pt")
+    else:
+        print("⚠️ Fichier best.pt introuvable ! Place-le dans ton repo GitHub.")
 except Exception as e:
     print("❌ Erreur chargement modèle :", e)
-    model = None
 
-reader = easyocr.Reader(['en'], gpu=False)  # ⚠️ gpu=False pour éviter crash sur Render
+# -------------------- CHARGEMENT OCR --------------------
+try:
+    reader = easyocr.Reader(['en'], gpu=False)  # ⚠️ Render n'a pas de GPU
+except Exception as e:
+    print("❌ Erreur EasyOCR :", e)
+    reader = None
 
-# ---------- Base de données ----------
+# -------------------- BASE DE DONNÉES --------------------
 DB_NAME = "history.db"
 
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    plate TEXT,
-                    confidence REAL,
-                    timestamp TEXT,
-                    action TEXT
-                )''')
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        plate TEXT,
+                        confidence REAL,
+                        timestamp TEXT,
+                        action TEXT
+                    )''')
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print("❌ Erreur init DB :", e)
 
 def save_history(plate, confidence, action):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    c.execute("INSERT INTO history (plate, confidence, timestamp, action) VALUES (?, ?, ?, ?)",
-              (plate, confidence, timestamp, action))
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        c.execute("INSERT INTO history (plate, confidence, timestamp, action) VALUES (?, ?, ?, ?)",
+                  (plate, confidence, timestamp, action))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print("❌ Erreur sauvegarde DB :", e)
 
-# ---------- Détection ----------
+# -------------------- DETECTION --------------------
 def detect_license_plate(image):
     if model is None:
         return [], np.array(image)
 
     img_np = np.array(image)
-    results = model(img_np)[0]
-    detections = []
+    try:
+        results = model(img_np)[0]
+    except Exception as e:
+        print("❌ Erreur YOLO inference :", e)
+        return [], img_np
 
+    detections = []
     if results.boxes is not None:
         for box, conf, cls in zip(results.boxes.xyxy.cpu().numpy(),
                                   results.boxes.conf.cpu().numpy(),
                                   results.boxes.cls.cpu().numpy()):
             x1, y1, x2, y2 = map(int, box)
 
-            # --- Crop de la plaque ---
+            # --- Crop plaque ---
             plate_crop = img_np[y1:y2, x1:x2]
-
-            # --- OCR sur la plaque ---
             plate_text = ""
-            if plate_crop.size > 0:  # éviter crash si crop vide
-                ocr_result = reader.readtext(plate_crop)
-                if len(ocr_result) > 0:
-                    plate_text = ocr_result[0][1]
+
+            if plate_crop.size > 0 and reader:
+                try:
+                    ocr_result = reader.readtext(plate_crop)
+                    if len(ocr_result) > 0:
+                        plate_text = ocr_result[0][1]
+                except Exception as e:
+                    print("⚠️ Erreur OCR :", e)
 
             detections.append({
                 'bbox': [x1, y1, x2, y2],
@@ -84,10 +113,14 @@ def detect_license_plate(image):
                 'plate_text': plate_text
             })
 
-    annotated_img = results.plot()
+    try:
+        annotated_img = results.plot()
+    except Exception:
+        annotated_img = img_np
+
     return detections, annotated_img
 
-# ---------- Routes ----------
+# -------------------- ROUTES --------------------
 @app.route('/')
 def dashboard():
     return render_template("index.html")
@@ -99,6 +132,7 @@ def upload():
     file = request.files['image']
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
+
     filename = secure_filename(file.filename)
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
@@ -106,14 +140,17 @@ def upload():
     image = Image.open(filepath).convert('RGB')
     detections, annotated_img = detect_license_plate(image)
 
-    # Sauvegarde dans historique
+    # Sauvegarde historique
     for d in detections:
         save_history(d['plate_text'], d['confidence'], "entry")
 
-    # Conversion image annotée en base64
-    annotated_img_bgr = cv2.cvtColor(annotated_img, cv2.COLOR_RGB2BGR)
-    _, buffer = cv2.imencode('.jpg', annotated_img_bgr)
-    img_str = base64.b64encode(buffer).decode('utf-8')
+    # Conversion en base64
+    try:
+        annotated_img_bgr = cv2.cvtColor(annotated_img, cv2.COLOR_RGB2BGR)
+        _, buffer = cv2.imencode('.jpg', annotated_img_bgr)
+        img_str = base64.b64encode(buffer).decode('utf-8')
+    except Exception:
+        img_str = ""
 
     accuracy = round(sum(d['confidence'] for d in detections) / len(detections), 3) if detections else 0.0
 
@@ -125,17 +162,18 @@ def upload():
 
 @app.route('/history')
 def history():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("SELECT plate, confidence, timestamp, action FROM history ORDER BY id DESC LIMIT 50")
-    rows = c.fetchall()
-    conn.close()
-    return jsonify(rows)
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        c.execute("SELECT plate, confidence, timestamp, action FROM history ORDER BY id DESC LIMIT 50")
+        rows = c.fetchall()
+        conn.close()
+        return jsonify(rows)
+    except Exception as e:
+        return jsonify({"error": f"Erreur DB: {e}"}), 500
 
-# ---------- Lancement ----------
+# -------------------- LANCEMENT --------------------
 if __name__ == "__main__":
     init_db()
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 10000))  # ⚠️ Render impose PORT
     app.run(host="0.0.0.0", port=port)
-
-
