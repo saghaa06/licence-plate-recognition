@@ -15,23 +15,32 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# -------------------- CHARGEMENT YOLO --------------------
-model = None
+# -------------------- PATCH TORCH >= 2.6 --------------------
 try:
     import ultralytics.nn.tasks as tasks
+    import ultralytics.nn.modules.conv as conv
+    import ultralytics.nn.modules.head as head
+    import ultralytics.nn.modules.block as block
     import torch.nn.modules.container as container
 
-    # ✅ Autoriser les classes YOLO + DetectionModel + Sequential pour PyTorch >= 2.6
     if hasattr(torch, "serialization"):
         torch.serialization.add_safe_globals([
             YOLO,
-            tasks.DetectionModel,
-            container.Sequential
+            tasks.DetectionModel,     # architecture YOLO
+            container.Sequential,     # nn.Sequential
+            conv.Conv,                # couches convolution
+            head.Detect,              # tête de détection
+            block.C2f                 # blocs YOLOv8
         ])
+except Exception as e:
+    print("⚠️ Patch Torch échoué :", e)
 
-    # ✅ Charger modèle YOLO
+# -------------------- CHARGEMENT YOLO --------------------
+model = None
+try:
     if os.path.exists("best.pt"):
         model = YOLO("best.pt")
+        print("✅ Modèle YOLO chargé")
     else:
         print("⚠️ Fichier best.pt introuvable ! Place-le dans ton repo GitHub.")
 except Exception as e:
