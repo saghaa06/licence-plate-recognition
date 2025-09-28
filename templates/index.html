@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ALPR Detection - BMT Internship Project</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+
+<body>
+    <!-- ✅ Sidebar -->
+    <div class="sidebar">
+        <img src="../static/logo.png" style="width: 50%; margin-left : 50px;"/>
+        <h2>Menu</h2>
+
+        <ul>
+            <li><a href="#description">📘 Project Description</a></li>
+            <li><a href="#upload-section">📷 Detect Plate</a></li>
+            <li><a href="#history">📑 History</a></li>
+            <li><a href="#about">👥 About Us</a></li>
+        </ul>
+    </div>
+
+    <!-- ✅ Main Content -->
+    <div class="main-content">
+        <header>
+            <h1>Automatic License Plate Recognition (ALPR)</h1>
+            <p>Internship Project at <strong>BMT (Bejaia Mediterranean Terminal)</strong></p>
+        </header>
+
+        <!-- ✅ Project Description -->
+        <section id="description">
+            <h2>Project Description</h2>
+            <p>
+                We used the <strong>YOLOv8n pre-trained model</strong> and created a dataset of <strong>7,829
+                    images</strong> labeled with Roboflow.
+                To build our dataset, we combined different open-source datasets from <strong>Kaggle, Roboflow, and
+                    other websites</strong>.
+            </p>
+            <h3>Why YOLOv8?</h3>
+            <p>
+                YOLOv8 is the latest version of the "You Only Look Once" family of object detection models.
+                It is <strong>fast, accurate, and lightweight</strong>, making it suitable for real-time applications
+                like license plate detection.
+                YOLO works by dividing an image into a grid and predicting bounding boxes and class probabilities for
+                each grid cell in a single forward pass.
+            </p>
+            <h3>Why Roboflow?</h3>
+            <p>
+                We used <strong>Roboflow</strong> for dataset preparation and annotation.
+                Roboflow simplifies the process of labeling images, augmenting datasets, and exporting them in formats
+                compatible with YOLO.
+                This saved us time and allowed us to focus on model training and evaluation.
+            </p>
+            <h3>Training Approach</h3>
+            <p>
+                - Model: <strong>YOLOv8n</strong> (nano version for speed)
+                - Dataset: <strong>7,829 labeled images</strong>
+                - Tools: <strong>Roboflow, Kaggle datasets</strong>, and other open-source resources
+                - Goal: Achieve high accuracy while maintaining real-time detection performance
+            </p>
+        </section>
+
+        <!-- ✅ Detect Plate Section -->
+        <section id="upload-section">
+            <h2>Detect Plate</h2>
+            <input type="file" id="fileInput" accept="image/*" />
+            <button id="captureBtn">Capture from Camera</button>
+            <button id="startBtn" disabled>Start Detection</button>
+            <p id="loadingText" style="display:none;">Processing image, please wait...</p>
+            <p id="timeTaken" style="display:none;"></p>
+            <video id="video" width="320" height="240" autoplay style="display:none;"></video>
+            <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
+            <button id="snapBtn" style="display:none;">Snap Photo</button>
+
+            <!-- ✅ Results -->
+            <section id="result-section" style="display:none;">
+                <h2>Detection Results</h2>
+                <img id="resultImage" alt="Annotated Image" />
+                <p><strong>Detection Accuracy:</strong> <span id="accuracy"></span></p>
+                <div id="detections"></div>
+            </section>
+        </section>
+
+        <!-- ✅ History Section -->
+        <section id="history">
+            <h2>Truck Entry/Exit History</h2>
+            <table id="historyTable">
+                <thead>
+                    <tr>
+                        <th>Plate</th>
+                        <th>Confidence</th>
+                        <th>Timestamp</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </section>
+
+        <!-- ✅ About Us -->
+        <section id="about">
+            <h2>About Us</h2>
+            <p>
+                👩‍💻 <strong>Bekhouche Sarra</strong> – AI Engineer, passionate about computer vision and industrial
+                networks.
+            </p>
+            <p>
+                👩‍💻 <strong>Mokhanfer Douaa</strong> – AI Engineer, specialized in intelligent systems and automation.
+            </p>
+            <p>
+                This project was developed as part of our internship at <strong>BMT (Bejaia Mediterranean
+                    Terminal)</strong>,
+                aiming to improve security and efficiency through automatic license plate recognition.
+            </p>
+        </section>
+
+        <footer>
+            <p>&copy; 2024 Bekhouche Sarra & Mokhanfer Douaa - BMT Internship Project</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <script>
+        // Charger l'historique
+        async function loadHistory() {
+            const res = await fetch("/history");
+            const rows = await res.json();
+            const tbody = document.querySelector("#historyTable tbody");
+            tbody.innerHTML = "";
+            rows.forEach(r => {
+                const tr = document.createElement("tr");
+                r.forEach(cell => {
+                    const td = document.createElement("td");
+                    td.textContent = cell;
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+        }
+        loadHistory();
+        setInterval(loadHistory, 5000); // refresh auto toutes les 5 sec
+    </script>
+</body>
+
+</html>
